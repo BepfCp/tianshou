@@ -1,17 +1,19 @@
 import torch
 import numpy as np
 from copy import deepcopy
-import torch.nn.functional as F
 from typing import Dict, Union, Optional
 
 from tianshou.policy import BasePolicy
-from tianshou.data import Batch, ReplayBuffer, PrioritizedReplayBuffer, \
-    to_torch_as, to_numpy
+from tianshou.data import Batch, ReplayBuffer, to_torch_as, to_numpy
 
 
 class DQNPolicy(BasePolicy):
     """Implementation of Deep Q Network. arXiv:1312.5602
+
     Implementation of Double Q-Learning. arXiv:1509.06461
+
+    Implementation of Dueling DQN. arXiv:1511.06581 (the dueling DQN is
+    implemented in the network side, not here)
 
     :param torch.nn.Module model: a model following the rules in
         :class:`~tianshou.policy.BasePolicy`. (s -> logits)
@@ -91,9 +93,6 @@ class DQNPolicy(BasePolicy):
         batch = self.compute_nstep_return(
             batch, buffer, indice, self._target_q,
             self._gamma, self._n_step, self._rew_norm)
-        if isinstance(buffer, PrioritizedReplayBuffer):
-            batch.update_weight = buffer.update_weight
-            batch.indice = indice
         return batch
 
     def forward(self, batch: Batch,
@@ -157,16 +156,12 @@ class DQNPolicy(BasePolicy):
         if self._target and self._cnt % self._freq == 0:
             self.sync_weight()
         self.optim.zero_grad()
-        q = self(batch).logits
+        q = self(batch, eps=0.).logits
         q = q[np.arange(len(q)), batch.act]
-        r = to_torch_as(batch.returns, q)
-        if hasattr(batch, 'update_weight'):
-            td = r - q
-            batch.update_weight(batch.indice, to_numpy(td))
-            impt_weight = to_torch_as(batch.impt_weight, q)
-            loss = (td.pow(2) * impt_weight).mean()
-        else:
-            loss = F.mse_loss(q, r)
+        r = to_torch_as(batch.returns, q).flatten()
+        td = r - q
+        loss = (td.pow(2) * batch.weight).mean()
+        batch.weight = td  # prio-buffer
         loss.backward()
         self.optim.step()
         self._cnt += 1

@@ -67,7 +67,8 @@ class A2CPolicy(PGPolicy):
                 v_.append(to_numpy(self.critic(b.obs_next)))
         v_ = np.concatenate(v_, axis=0)
         return self.compute_episodic_return(
-            batch, v_, gamma=self._gamma, gae_lambda=self._lambda)
+            batch, v_, gamma=self._gamma, gae_lambda=self._lambda,
+            rew_norm=self._rew_norm)
 
     def forward(self, batch: Batch,
                 state: Optional[Union[dict, Batch, np.ndarray]] = None,
@@ -97,19 +98,17 @@ class A2CPolicy(PGPolicy):
     def learn(self, batch: Batch, batch_size: int, repeat: int,
               **kwargs) -> Dict[str, List[float]]:
         self._batch = batch_size
-        r = batch.returns
-        if self._rew_norm and not np.isclose(r.std(), 0):
-            batch.returns = (r - r.mean()) / r.std()
         losses, actor_losses, vf_losses, ent_losses = [], [], [], []
         for _ in range(repeat):
             for b in batch.split(batch_size):
                 self.optim.zero_grad()
                 dist = self(b).dist
-                v = self.critic(b.obs).squeeze(-1)
+                v = self.critic(b.obs).flatten()
                 a = to_torch_as(b.act, v)
                 r = to_torch_as(b.returns, v)
-                a_loss = -(dist.log_prob(a).reshape(v.shape) * (r - v).detach()
-                           ).mean()
+                log_prob = dist.log_prob(a).reshape(
+                    r.shape[0], -1).transpose(0, 1)
+                a_loss = -(log_prob * (r - v).detach()).mean()
                 vf_loss = F.mse_loss(r, v)
                 ent_loss = dist.entropy().mean()
                 loss = a_loss + self._w_vf * vf_loss - self._w_ent * ent_loss

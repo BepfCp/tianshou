@@ -46,7 +46,7 @@ setup(
                                     'examples', 'examples.*',
                                     'docs', 'docs.*']),
     install_requires=[
-        'gym>=0.15.0',
+        'gym>=0.15.4',
         'tqdm',
         'numpy',
         'tensorboard',
@@ -60,6 +60,7 @@ setup(
             'flake8',
             'pytest',
             'pytest-cov',
+            'ray>=0.8.0',
         ],
         'atari': [
             'atari_py',

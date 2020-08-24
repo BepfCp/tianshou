@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from copy import deepcopy
-import torch.nn.functional as F
 from typing import Dict, Tuple, Optional
 
 from tianshou.policy import DDPGPolicy
@@ -117,18 +116,23 @@ class TD3Policy(DDPGPolicy):
 
     def learn(self, batch: Batch, **kwargs) -> Dict[str, float]:
         # critic 1
-        current_q1 = self.critic1(batch.obs, batch.act).squeeze(-1)
-        target_q = batch.returns
-        critic1_loss = F.mse_loss(current_q1, target_q)
+        current_q1 = self.critic1(batch.obs, batch.act).flatten()
+        target_q = batch.returns.flatten()
+        td1 = current_q1 - target_q
+        critic1_loss = (td1.pow(2) * batch.weight).mean()
+        # critic1_loss = F.mse_loss(current_q1, target_q)
         self.critic1_optim.zero_grad()
         critic1_loss.backward()
         self.critic1_optim.step()
         # critic 2
-        current_q2 = self.critic2(batch.obs, batch.act).squeeze(-1)
-        critic2_loss = F.mse_loss(current_q2, target_q)
+        current_q2 = self.critic2(batch.obs, batch.act).flatten()
+        td2 = current_q2 - target_q
+        critic2_loss = (td2.pow(2) * batch.weight).mean()
+        # critic2_loss = F.mse_loss(current_q2, target_q)
         self.critic2_optim.zero_grad()
         critic2_loss.backward()
         self.critic2_optim.step()
+        batch.weight = (td1 + td2) / 2.  # prio-buffer
         if self._cnt % self._freq == 0:
             actor_loss = -self.critic1(
                 batch.obs, self(batch, eps=0).act).mean()

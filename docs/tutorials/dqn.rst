@@ -30,15 +30,26 @@ It is available if you want the original ``gym.Env``:
     train_envs = gym.make('CartPole-v0')
     test_envs = gym.make('CartPole-v0')
 
-Tianshou supports parallel sampling for all algorithms. It provides three types of vectorized environment wrapper: :class:`~tianshou.env.VectorEnv`, :class:`~tianshou.env.SubprocVectorEnv`, and :class:`~tianshou.env.RayVectorEnv`. It can be used as follows: 
+Tianshou supports parallel sampling for all algorithms. It provides four types of vectorized environment wrapper: :class:`~tianshou.env.DummyVectorEnv`, :class:`~tianshou.env.SubprocVectorEnv`, :class:`~tianshou.env.ShmemVectorEnv`, and :class:`~tianshou.env.RayVectorEnv`. It can be used as follows: (more explanation can be found at :ref:`parallel_sampling`)
 ::
 
-    train_envs = ts.env.VectorEnv([lambda: gym.make('CartPole-v0') for _ in range(8)])
-    test_envs = ts.env.VectorEnv([lambda: gym.make('CartPole-v0') for _ in range(100)])
+    train_envs = ts.env.DummyVectorEnv([lambda: gym.make('CartPole-v0') for _ in range(8)])
+    test_envs = ts.env.DummyVectorEnv([lambda: gym.make('CartPole-v0') for _ in range(100)])
 
 Here, we set up 8 environments in ``train_envs`` and 100 environments in ``test_envs``.
 
 For the demonstration, here we use the second block of codes.
+
+.. warning::
+
+    If you use your own environment, please make sure the ``seed`` method is set up properly, e.g.,
+
+    ::
+
+        def seed(self, seed):
+            np.random.seed(seed)
+
+    Otherwise, the outputs of these envs may be the same with each other.
 
 .. _build_the_network:
 
@@ -167,7 +178,6 @@ Watch the Agent's Performance
 
     collector = ts.data.Collector(policy, env)
     collector.collect(n_episode=1, render=1 / 35)
-    collector.close()
 
 .. _customized_trainer:
 
@@ -179,7 +189,7 @@ Train a Policy with Customized Codes
 Tianshou supports user-defined training code. Here is the code snippet:
 ::
 
-    # pre-collect 5000 frames with random action before training
+    # pre-collect at least 5000 frames with random action before training
     policy.set_eps(1)
     train_collector.collect(n_step=5000)
 
@@ -199,8 +209,8 @@ Tianshou supports user-defined training code. Here is the code snippet:
                 # back to training eps
                 policy.set_eps(0.1)
 
-        # train policy with a sampled batch data
-        losses = policy.learn(train_collector.sample(batch_size=64))
+        # train policy with a sampled batch data from buffer
+        losses = policy.update(64, train_collector.buffer)
 
 For further usage, you can refer to the :doc:`/tutorials/cheatsheet`.
 

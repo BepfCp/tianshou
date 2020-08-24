@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from copy import deepcopy
-import torch.nn.functional as F
 from typing import Dict, Tuple, Union, Optional
 
 from tianshou.policy import DDPGPolicy
@@ -139,25 +138,30 @@ class SACPolicy(DDPGPolicy):
 
     def learn(self, batch: Batch, **kwargs) -> Dict[str, float]:
         # critic 1
-        current_q1 = self.critic1(batch.obs, batch.act).squeeze(-1)
-        target_q = batch.returns
-        critic1_loss = F.mse_loss(current_q1, target_q)
+        current_q1 = self.critic1(batch.obs, batch.act).flatten()
+        target_q = batch.returns.flatten()
+        td1 = current_q1 - target_q
+        critic1_loss = (td1.pow(2) * batch.weight).mean()
+        # critic1_loss = F.mse_loss(current_q1, target_q)
         self.critic1_optim.zero_grad()
         critic1_loss.backward()
         self.critic1_optim.step()
         # critic 2
-        current_q2 = self.critic2(batch.obs, batch.act).squeeze(-1)
-        critic2_loss = F.mse_loss(current_q2, target_q)
+        current_q2 = self.critic2(batch.obs, batch.act).flatten()
+        td2 = current_q2 - target_q
+        critic2_loss = (td2.pow(2) * batch.weight).mean()
+        # critic2_loss = F.mse_loss(current_q2, target_q)
         self.critic2_optim.zero_grad()
         critic2_loss.backward()
         self.critic2_optim.step()
+        batch.weight = (td1 + td2) / 2.  # prio-buffer
         # actor
         obs_result = self(batch, explorating=False)
         a = obs_result.act
-        current_q1a = self.critic1(batch.obs, a).squeeze(-1)
-        current_q2a = self.critic2(batch.obs, a).squeeze(-1)
-        actor_loss = (self._alpha * obs_result.log_prob.reshape(
-            target_q.shape) - torch.min(current_q1a, current_q2a)).mean()
+        current_q1a = self.critic1(batch.obs, a).flatten()
+        current_q2a = self.critic2(batch.obs, a).flatten()
+        actor_loss = (self._alpha * obs_result.log_prob.flatten()
+                      - torch.min(current_q1a, current_q2a)).mean()
         self.actor_optim.zero_grad()
         actor_loss.backward()
         self.actor_optim.step()

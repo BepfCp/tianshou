@@ -51,7 +51,7 @@ class PGPolicy(BasePolicy):
         # batch.returns = self._vectorized_returns(batch)
         # return batch
         return self.compute_episodic_return(
-            batch, gamma=self._gamma, gae_lambda=1.)
+            batch, gamma=self._gamma, gae_lambda=1., rew_norm=self._rew_norm)
 
     def forward(self, batch: Batch,
                 state: Optional[Union[dict, Batch, np.ndarray]] = None,
@@ -81,16 +81,15 @@ class PGPolicy(BasePolicy):
     def learn(self, batch: Batch, batch_size: int, repeat: int,
               **kwargs) -> Dict[str, List[float]]:
         losses = []
-        r = batch.returns
-        if self._rew_norm and not np.isclose(r.std(), 0):
-            batch.returns = (r - r.mean()) / r.std()
         for _ in range(repeat):
             for b in batch.split(batch_size):
                 self.optim.zero_grad()
                 dist = self(b).dist
                 a = to_torch_as(b.act, dist.logits)
                 r = to_torch_as(b.returns, dist.logits)
-                loss = -(dist.log_prob(a) * r).sum()
+                log_prob = dist.log_prob(a).reshape(
+                    r.shape[0], -1).transpose(0, 1)
+                loss = -(log_prob * r).mean()
                 loss.backward()
                 self.optim.step()
                 losses.append(loss.item())

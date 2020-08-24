@@ -6,7 +6,7 @@ from copy import deepcopy
 from typing import Optional, Tuple
 from torch.utils.tensorboard import SummaryWriter
 
-from tianshou.env import VectorEnv
+from tianshou.env import DummyVectorEnv
 from tianshou.utils.net.common import Net
 from tianshou.trainer import offpolicy_trainer
 from tianshou.data import Collector, ReplayBuffer
@@ -23,7 +23,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument('--eps-train', type=float, default=0.1)
     parser.add_argument('--buffer-size', type=int, default=20000)
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--gamma', type=float, default=0.1,
+    parser.add_argument('--gamma', type=float, default=0.9,
                         help='a smaller gamma favors earlier win')
     parser.add_argument('--n-step', type=int, default=3)
     parser.add_argument('--target-update-freq', type=int, default=320)
@@ -38,7 +38,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument('--render', type=float, default=0.1)
     parser.add_argument('--board_size', type=int, default=6)
     parser.add_argument('--win_size', type=int, default=4)
-    parser.add_argument('--win-rate', type=float, default=0.8,
+    parser.add_argument('--win_rate', type=float, default=0.9,
                         help='the expected winning rate')
     parser.add_argument('--watch', default=False, action='store_true',
                         help='no training, '
@@ -106,8 +106,8 @@ def train_agent(args: argparse.Namespace = get_args(),
                 ) -> Tuple[dict, BasePolicy]:
     def env_func():
         return TicTacToeEnv(args.board_size, args.win_size)
-    train_envs = VectorEnv([env_func for _ in range(args.training_num)])
-    test_envs = VectorEnv([env_func for _ in range(args.test_num)])
+    train_envs = DummyVectorEnv([env_func for _ in range(args.training_num)])
+    test_envs = DummyVectorEnv([env_func for _ in range(args.test_num)])
     # seed
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -159,9 +159,6 @@ def train_agent(args: argparse.Namespace = get_args(),
         stop_fn=stop_fn, save_fn=save_fn, writer=writer,
         test_in_train=False)
 
-    train_collector.close()
-    test_collector.close()
-
     return result, policy.policies[args.agent_id - 1]
 
 
@@ -175,4 +172,3 @@ def watch(args: argparse.Namespace = get_args(),
     collector = Collector(policy, env)
     result = collector.collect(n_episode=1, render=args.render)
     print(f'Final reward: {result["rew"]}, length: {result["len"]}')
-    collector.close()

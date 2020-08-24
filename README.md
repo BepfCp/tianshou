@@ -20,7 +20,8 @@
 
 - [Policy Gradient (PG)](https://papers.nips.cc/paper/1713-policy-gradient-methods-for-reinforcement-learning-with-function-approximation.pdf)
 - [Deep Q-Network (DQN)](https://storage.googleapis.com/deepmind-media/dqn/DQNNaturePaper.pdf)
-- [Double DQN (DDQN)](https://arxiv.org/pdf/1509.06461.pdf)
+- [Double DQN](https://arxiv.org/pdf/1509.06461.pdf)
+- [Dueling DQN](https://arxiv.org/pdf/1511.06581.pdf)
 - [Advantage Actor-Critic (A2C)](https://openai.com/blog/baselines-acktr-a2c/)
 - [Deep Deterministic Policy Gradient (DDPG)](https://arxiv.org/pdf/1509.02971.pdf)
 - [Proximal Policy Optimization (PPO)](https://arxiv.org/pdf/1707.06347.pdf)
@@ -33,11 +34,11 @@
 Here is Tianshou's other features:
 
 - Elegant framework, using only ~2000 lines of code
-- Support parallel environment sampling for all algorithms [Usage](https://tianshou.readthedocs.io/en/latest/tutorials/cheatsheet.html#parallel-sampling)
+- Support parallel environment simulation (synchronous or asynchronous) for all algorithms [Usage](https://tianshou.readthedocs.io/en/latest/tutorials/cheatsheet.html#parallel-sampling)
 - Support recurrent state representation in actor network and critic network (RNN-style training for POMDP) [Usage](https://tianshou.readthedocs.io/en/latest/tutorials/cheatsheet.html#rnn-style-training)
 - Support any type of environment state (e.g. a dict, a self-defined class, ...) [Usage](https://tianshou.readthedocs.io/en/latest/tutorials/cheatsheet.html#user-defined-environment-and-different-state-representation)
 - Support customized training process [Usage](https://tianshou.readthedocs.io/en/latest/tutorials/cheatsheet.html#customize-training-process)
-- Support n-step returns estimation for all Q-learning based algorithms
+- Support n-step returns estimation and prioritized experience replay for all Q-learning based algorithms
 - Support multi-agent RL [Usage](https://tianshou.readthedocs.io/en/latest/tutorials/cheatsheet.html##multi-agent-reinforcement-learning)
 
 In Chinese, Tianshou means divinely ordained and is derived to the gift of being born with. Tianshou is a reinforcement learning platform, and the RL algorithm does not learn from humans. So taking "Tianshou" means that there is no teacher to study with, but rather to learn by themselves through constant interaction with the environment.
@@ -138,18 +139,20 @@ Check out the [GitHub Actions](https://github.com/thu-ml/tianshou/actions) page 
 
 ### Modularized Policy
 
-We decouple all of the algorithms into 4 parts:
+We decouple all of the algorithms roughly into the following parts:
 
 - `__init__`: initialize the policy;
 - `forward`: to compute actions over given observations;
 - `process_fn`: to preprocess data from replay buffer (since we have reformulated all algorithms to replay-buffer based algorithms);
-- `learn`: to learn from a given batch data.
+- `learn`: to learn from a given batch data;
+- `post_process_fn`: to update the replay buffer from the learning process (e.g., prioritized replay buffer needs to update the weight);
+- `update`: the main interface for training, i.e., `process_fn -> learn -> post_process_fn`.
 
 Within this API, we can interact with different policies conveniently.
 
 ### Elegant and Flexible
 
-Currently, the overall code of Tianshou platform is less than 1500 lines without environment wrappers for Atari and Mujoco. Most of the implemented algorithms are less than 100 lines of python code. It is quite easy to go through the framework and understand how it works. We provide many flexible API as you wish, for instance, if you want to use your policy to interact with the environment with (at least) `n` steps:
+Currently, the overall code of Tianshou platform is less than 2500 lines. Most of the implemented algorithms are less than 100 lines of python code. It is quite easy to go through the framework and understand how it works. We provide many flexible API as you wish, for instance, if you want to use your policy to interact with the environment with (at least) `n` steps:
 
 ```python
 result = collector.collect(n_step=n)
@@ -164,7 +167,7 @@ result = collector.collect(n_episode=[1, 0, 3])
 If you want to train the given policy with a sampled batch:
 
 ```python
-result = policy.learn(collector.sample(batch_size))
+result = policy.update(batch_size, collector.buffer)
 ```
 
 You can check out the [documentation](https://tianshou.readthedocs.io) for further usage.
@@ -198,8 +201,8 @@ Make environments:
 
 ```python
 # you can also try with SubprocVectorEnv
-train_envs = ts.env.VectorEnv([lambda: gym.make(task) for _ in range(train_num)])
-test_envs = ts.env.VectorEnv([lambda: gym.make(task) for _ in range(test_num)])
+train_envs = ts.env.DummyVectorEnv([lambda: gym.make(task) for _ in range(train_num)])
+test_envs = ts.env.DummyVectorEnv([lambda: gym.make(task) for _ in range(test_num)])
 ```
 
 Define the network:
@@ -246,7 +249,6 @@ Watch the performance with 35 FPS:
 ```python
 collector = ts.data.Collector(policy, env)
 collector.collect(n_episode=1, render=1 / 35)
-collector.close()
 ```
 
 Look at the result saved in tensorboard: (with bash script in your terminal)

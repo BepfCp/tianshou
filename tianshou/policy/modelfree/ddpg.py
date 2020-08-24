@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from copy import deepcopy
-import torch.nn.functional as F
 from typing import Dict, Tuple, Union, Optional
 
 from tianshou.policy import BasePolicy
@@ -142,9 +141,11 @@ class DDPGPolicy(BasePolicy):
         return Batch(act=actions, state=h)
 
     def learn(self, batch: Batch, **kwargs) -> Dict[str, float]:
-        current_q = self.critic(batch.obs, batch.act).squeeze(-1)
-        target_q = batch.returns
-        critic_loss = F.mse_loss(current_q, target_q)
+        current_q = self.critic(batch.obs, batch.act).flatten()
+        target_q = batch.returns.flatten()
+        td = current_q - target_q
+        critic_loss = (td.pow(2) * batch.weight).mean()
+        batch.weight = td  # prio-buffer
         self.critic_optim.zero_grad()
         critic_loss.backward()
         self.critic_optim.step()

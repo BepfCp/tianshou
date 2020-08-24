@@ -23,13 +23,13 @@ def offpolicy_trainer(
         test_fn: Optional[Callable[[int], None]] = None,
         stop_fn: Optional[Callable[[float], bool]] = None,
         save_fn: Optional[Callable[[BasePolicy], None]] = None,
-        log_fn: Optional[Callable[[dict], None]] = None,
         writer: Optional[SummaryWriter] = None,
         log_interval: int = 1,
         verbose: bool = True,
         test_in_train: bool = True,
 ) -> Dict[str, Union[float, str]]:
-    """A wrapper for off-policy trainer procedure.
+    """A wrapper for off-policy trainer procedure. The ``step`` in trainer
+    means a policy network update.
 
     :param policy: an instance of the :class:`~tianshou.policy.BasePolicy`
         class.
@@ -48,8 +48,9 @@ def offpolicy_trainer(
     :param int batch_size: the batch size of sample data, which is going to
         feed in the policy network.
     :param int update_per_step: the number of times the policy network would
-        be updated after frames be collected. In other words, collect some
-        frames and do some policy network update.
+        be updated after frames are collected, for example, set it to 256 means
+        it updates policy 256 times once after ``collect_per_step`` frames are
+        collected.
     :param function train_fn: a function receives the current number of epoch
         index and performs some operations at the beginning of training in this
         epoch.
@@ -61,7 +62,6 @@ def offpolicy_trainer(
     :param function stop_fn: a function receives the average undiscounted
         returns of the testing result, return a boolean which indicates whether
         reaching the goal.
-    :param function log_fn: a function receives env info for logging.
     :param torch.utils.tensorboard.SummaryWriter writer: a TensorBoard
         SummaryWriter.
     :param int log_interval: the log interval of the writer.
@@ -83,8 +83,7 @@ def offpolicy_trainer(
         with tqdm.tqdm(total=step_per_epoch, desc=f'Epoch #{epoch}',
                        **tqdm_config) as t:
             while t.n < t.total:
-                result = train_collector.collect(n_step=collect_per_step,
-                                                 log_fn=log_fn)
+                result = train_collector.collect(n_step=collect_per_step)
                 data = {}
                 if test_in_train and stop_fn and stop_fn(result['rew']):
                     test_result = test_episode(
@@ -106,7 +105,7 @@ def offpolicy_trainer(
                 for i in range(update_per_step * min(
                         result['n/st'] // collect_per_step, t.total - t.n)):
                     global_step += 1
-                    losses = policy.learn(train_collector.sample(batch_size))
+                    losses = policy.update(batch_size, train_collector.buffer)
                     for k in result.keys():
                         data[k] = f'{result[k]:.2f}'
                         if writer and global_step % log_interval == 0:
